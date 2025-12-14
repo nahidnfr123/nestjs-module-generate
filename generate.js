@@ -1,227 +1,226 @@
 // generate.js
-
 #!/usr/bin/env node
 
 const fs = require('fs');
 const path = require('path');
 
 class NestJSGenerator {
-    constructor() {
-        this.config = {
-            templatesDir: './templates',
-            outputDir: './src/modules',
-            templates: {
-                module: { extension: 'module.ts', required: true },
-                controller: { extension: 'controller.ts', required: true },
-                service: { extension: 'service.ts', required: true },
-                'create-dto': {
-                    extension: 'dto.ts',
-                    required: false,
-                    outputPath: 'dto',
-                    filename: 'create-{{singularName}}.dto.ts'
-                },
-                'update-dto': {
-                    extension: 'dto.ts',
-                    required: false,
-                    outputPath: 'dto',
-                    filename: 'update-{{singularName}}.dto.ts'
-                },
-                schema: {
-                    extension: 'schema.ts',
-                    required: false,
-                    outputPath: 'schema',
-                    filename: '{{singularName}}.schema.ts'
-                }
-            },
-            exclusions: {
-                'create-dto': ['auth', 'payments'],
-                'update-dto': ['auth', 'payments'],
-                schema: ['auth', 'sidebar']
-            }
-        };
+  constructor() {
+    this.config = {
+      templatesDir: './templates',
+      outputDir: './src/modules',
+      templates: {
+        module: { extension: 'module.ts', required: true },
+        controller: { extension: 'controller.ts', required: true },
+        service: { extension: 'service.ts', required: true },
+        'create-dto': {
+          extension: 'dto.ts',
+          required: false,
+          outputPath: 'dto',
+          filename: 'create-{{singularName}}.dto.ts',
+        },
+        'update-dto': {
+          extension: 'dto.ts',
+          required: false,
+          outputPath: 'dto',
+          filename: 'update-{{singularName}}.dto.ts',
+        },
+        schema: {
+          extension: 'schema.ts',
+          required: false,
+          outputPath: 'schema',
+          filename: '{{singularName}}.schema.ts',
+        },
+      },
+      exclusions: {
+        'create-dto': ['auth', 'payments'],
+        'update-dto': ['auth', 'payments'],
+        schema: ['auth', 'sidebar'],
+      },
+    };
+  }
+
+  // Utility functions
+  toPascalCase(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  toCamelCase(str) {
+    return str.charAt(0).toLowerCase() + str.slice(1);
+  }
+
+  toKebabCase(str) {
+    return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+  }
+
+  toSnakeCase(str) {
+    return str.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+  }
+
+  // Convert plural to singular (basic implementation)
+  toSingular(str) {
+    // Handle common plural patterns
+    if (str.endsWith('ies')) {
+      return str.slice(0, -3) + 'y'; // categories -> category
+    }
+    if (str.endsWith('ves')) {
+      return str.slice(0, -3) + 'f'; // leaves -> leaf
+    }
+    if (str.endsWith('es') && (str.endsWith('ches') || str.endsWith('shes') || str.endsWith('xes'))) {
+      return str.slice(0, -2); // boxes -> box
+    }
+    if (str.endsWith('s') && !str.endsWith('ss')) {
+      return str.slice(0, -1); // users -> user
+    }
+    return str; // already singular or irregular
+  }
+
+  // Check if a module should be excluded for a specific template
+  shouldExclude(moduleName, templateName) {
+    const excludeList = this.config.exclusions[templateName];
+    return excludeList && excludeList.includes(moduleName);
+  }
+
+  // Get template content and replace placeholders
+  processTemplate(templateName, moduleName) {
+    const templatePath = path.join(this.config.templatesDir, `${templateName}.stub`);
+
+    if (!fs.existsSync(templatePath)) {
+      throw new Error(`Template not found: ${templatePath}`);
     }
 
-    // Utility functions
-    toPascalCase(str) {
-        return str.charAt(0).toUpperCase() + str.slice(1);
+    let content = fs.readFileSync(templatePath, 'utf-8');
+
+    // Get singular form
+    const singularName = this.toSingular(moduleName);
+
+    // Replace all possible naming conventions
+    const replacements = {
+      '{{moduleName}}': moduleName,
+      '{{ModuleName}}': this.toPascalCase(moduleName),
+      '{{module_name}}': this.toSnakeCase(moduleName),
+      '{{module-name}}': this.toKebabCase(moduleName),
+      '{{camelModuleName}}': this.toCamelCase(moduleName),
+      '{{MODULE_NAME}}': moduleName.toUpperCase(),
+      // Singular versions
+      '{{singularName}}': singularName,
+      '{{SingularName}}': this.toPascalCase(singularName),
+      '{{singular_name}}': this.toSnakeCase(singularName),
+      '{{singular-name}}': this.toKebabCase(singularName),
+      '{{camelSingularName}}': this.toCamelCase(singularName),
+      '{{SINGULAR_NAME}}': singularName.toUpperCase(),
+    };
+
+    Object.entries(replacements).forEach(([placeholder, value]) => {
+      content = content.replace(new RegExp(placeholder, 'g'), value);
+    });
+
+    return content;
+  }
+
+  // Generate a single file
+  generateFile(moduleName, templateName, templateConfig) {
+    if (this.shouldExclude(moduleName, templateName)) {
+      console.log(`  - Skipping ${templateName} (excluded for ${moduleName})`);
+      return;
     }
 
-    toCamelCase(str) {
-        return str.charAt(0).toLowerCase() + str.slice(1);
-    }
+    try {
+      const content = this.processTemplate(templateName, moduleName);
 
-    toKebabCase(str) {
-        return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-    }
+      // Determine an output path
+      let outputPath;
+      if (templateConfig.outputPath) {
+        outputPath = path.join(
+          this.config.outputDir,
+          moduleName,
+          templateConfig.outputPath,
+        );
+      } else {
+        outputPath = path.join(this.config.outputDir, moduleName);
+      }
 
-    toSnakeCase(str) {
-        return str.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
-    }
+      // Ensure directory exists
+      fs.mkdirSync(outputPath, { recursive: true });
 
-    // Convert plural to singular (basic implementation)
-    toSingular(str) {
-        // Handle common plural patterns
-        if (str.endsWith('ies')) {
-            return str.slice(0, -3) + 'y'; // categories -> category
-        }
-        if (str.endsWith('ves')) {
-            return str.slice(0, -3) + 'f'; // leaves -> leaf
-        }
-        if (str.endsWith('es') && (str.endsWith('ches') || str.endsWith('shes') || str.endsWith('xes'))) {
-            return str.slice(0, -2); // boxes -> box
-        }
-        if (str.endsWith('s') && !str.endsWith('ss')) {
-            return str.slice(0, -1); // users -> user
-        }
-        return str; // already singular or irregular
-    }
-
-    // Check if a module should be excluded for a specific template
-    shouldExclude(moduleName, templateName) {
-        const excludeList = this.config.exclusions[templateName];
-        return excludeList && excludeList.includes(moduleName);
-    }
-
-    // Get template content and replace placeholders
-    processTemplate(templateName, moduleName) {
-        const templatePath = path.join(this.config.templatesDir, `${templateName}.stub`);
-
-        if (!fs.existsSync(templatePath)) {
-            throw new Error(`Template not found: ${templatePath}`);
-        }
-
-        let content = fs.readFileSync(templatePath, 'utf-8');
-
-        // Get singular form
+      // Determine filename
+      let filename;
+      if (templateConfig.filename) {
         const singularName = this.toSingular(moduleName);
+        filename = templateConfig.filename
+          .replace(/{{moduleName}}/g, moduleName)
+          .replace(/{{singularName}}/g, singularName);
+      } else {
+        filename = `${moduleName}.${templateConfig.extension}`;
+      }
 
-        // Replace all possible naming conventions
-        const replacements = {
-            '{{moduleName}}': moduleName,
-            '{{ModuleName}}': this.toPascalCase(moduleName),
-            '{{module_name}}': this.toSnakeCase(moduleName),
-            '{{module-name}}': this.toKebabCase(moduleName),
-            '{{camelModuleName}}': this.toCamelCase(moduleName),
-            '{{MODULE_NAME}}': moduleName.toUpperCase(),
-            // Singular versions
-            '{{singularName}}': singularName,
-            '{{SingularName}}': this.toPascalCase(singularName),
-            '{{singular_name}}': this.toSnakeCase(singularName),
-            '{{singular-name}}': this.toKebabCase(singularName),
-            '{{camelSingularName}}': this.toCamelCase(singularName),
-            '{{SINGULAR_NAME}}': singularName.toUpperCase()
-        };
+      const fullPath = path.join(outputPath, filename);
 
-        Object.entries(replacements).forEach(([placeholder, value]) => {
-            content = content.replace(new RegExp(placeholder, 'g'), value);
-        });
+      // Check if a file already exists
+      if (fs.existsSync(fullPath)) {
+        console.log(`  - Skipping ${templateName} (${fullPath} already exists)`);
+        return;
+      }
 
-        return content;
+      // Write file
+      fs.writeFileSync(fullPath, content, 'utf-8');
+      console.log(`  - Generated: ${fullPath}`);
+
+    } catch (error) {
+      console.error(`  - Error generating ${templateName}: ${error.message}`);
+    }
+  }
+
+  // Generate all files for a module
+  generateModule(moduleName) {
+    console.log(`\nGenerating module: ${moduleName}`);
+
+    Object.entries(this.config.templates).forEach(([templateName, templateConfig]) => {
+      this.generateFile(moduleName, templateName, templateConfig);
+    });
+  }
+
+  // Generate multiple modules
+  generateModules(moduleNames) {
+    if (!Array.isArray(moduleNames)) {
+      moduleNames = [moduleNames];
     }
 
-    // Generate a single file
-    generateFile(moduleName, templateName, templateConfig) {
-        if (this.shouldExclude(moduleName, templateName)) {
-            console.log(`  - Skipping ${templateName} (excluded for ${moduleName})`);
-            return;
-        }
-
-        try {
-            const content = this.processTemplate(templateName, moduleName);
-
-            // Determine an output path
-            let outputPath;
-            if (templateConfig.outputPath) {
-                outputPath = path.join(
-                    this.config.outputDir,
-                    moduleName,
-                    templateConfig.outputPath
-                );
-            } else {
-                outputPath = path.join(this.config.outputDir, moduleName);
-            }
-
-            // Ensure directory exists
-            fs.mkdirSync(outputPath, { recursive: true });
-
-            // Determine filename
-            let filename;
-            if (templateConfig.filename) {
-                const singularName = this.toSingular(moduleName);
-                filename = templateConfig.filename
-                    .replace(/{{moduleName}}/g, moduleName)
-                    .replace(/{{singularName}}/g, singularName);
-            } else {
-                filename = `${moduleName}.${templateConfig.extension}`;
-            }
-
-            const fullPath = path.join(outputPath, filename);
-
-            // Check if a file already exists
-            if (fs.existsSync(fullPath)) {
-                console.log(`  - Skipping ${templateName} (${fullPath} already exists)`);
-                return;
-            }
-
-            // Write file
-            fs.writeFileSync(fullPath, content, 'utf-8');
-            console.log(`  - Generated: ${fullPath}`);
-
-        } catch (error) {
-            console.error(`  - Error generating ${templateName}: ${error.message}`);
-        }
+    // Validate templates directory
+    if (!fs.existsSync(this.config.templatesDir)) {
+      console.error(`Templates directory not found: ${this.config.templatesDir}`);
+      process.exit(1);
     }
 
-    // Generate all files for a module
-    generateModule(moduleName) {
-        console.log(`\nGenerating module: ${moduleName}`);
+    moduleNames.forEach(moduleName => {
+      this.generateModule(moduleName);
+    });
+  }
 
-        Object.entries(this.config.templates).forEach(([templateName, templateConfig]) => {
-            this.generateFile(moduleName, templateName, templateConfig);
-        });
+  // Load configuration from a file if exists
+  loadConfig(configPath = './generator.config.js') {
+    if (fs.existsSync(configPath)) {
+      try {
+        const userConfig = require(path.resolve(configPath));
+        this.config = { ...this.config, ...userConfig };
+        console.log(`Loaded configuration from: ${configPath}`);
+      } catch (error) {
+        console.warn(`Warning: Could not load config file: ${error.message}`);
+      }
+    }
+  }
+
+  // Initialize templates directory with default stubs
+  initTemplates() {
+    const templatesDir = this.config.templatesDir;
+
+    if (!fs.existsSync(templatesDir)) {
+      fs.mkdirSync(templatesDir, { recursive: true });
+      console.log(`Created templates directory: ${templatesDir}`);
     }
 
-    // Generate multiple modules
-    generateModules(moduleNames) {
-        if (!Array.isArray(moduleNames)) {
-            moduleNames = [moduleNames];
-        }
-
-        // Validate templates directory
-        if (!fs.existsSync(this.config.templatesDir)) {
-            console.error(`Templates directory not found: ${this.config.templatesDir}`);
-            process.exit(1);
-        }
-
-        moduleNames.forEach(moduleName => {
-            this.generateModule(moduleName);
-        });
-    }
-
-    // Load configuration from a file if exists
-    loadConfig(configPath = './generator.config.js') {
-        if (fs.existsSync(configPath)) {
-            try {
-                const userConfig = require(path.resolve(configPath));
-                this.config = { ...this.config, ...userConfig };
-                console.log(`Loaded configuration from: ${configPath}`);
-            } catch (error) {
-                console.warn(`Warning: Could not load config file: ${error.message}`);
-            }
-        }
-    }
-
-    // Initialize templates directory with default stubs
-    initTemplates() {
-        const templatesDir = this.config.templatesDir;
-
-        if (!fs.existsSync(templatesDir)) {
-            fs.mkdirSync(templatesDir, { recursive: true });
-            console.log(`Created templates directory: ${templatesDir}`);
-        }
-
-        const defaultTemplates = {
-            'module.stub': `import { Module } from '@nestjs/common';
+    const defaultTemplates = {
+      'module.stub': `import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { {{ModuleName}}Controller } from './{{moduleName}}.controller';
 import { {{ModuleName}}Service } from './{{moduleName}}.service';
@@ -239,7 +238,7 @@ import { {{SingularName}}, {{SingularName}}Schema } from './schema/{{singularNam
 })
 export class {{ModuleName}}Module {}`,
 
-            'controller.stub': `import { 
+      'controller.stub': `import { 
   Controller,
   Get,
   Post,
@@ -313,7 +312,7 @@ export class {{ModuleName}}Controller {
   }
 }`,
 
-            'service.stub': `import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+      'service.stub': `import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Create{{SingularName}}Dto } from './dto/create-{{singularName}}.dto';
@@ -435,7 +434,7 @@ export class {{ModuleName}}Service {
   }
 }`,
 
-            'create-dto.stub': `import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+      'create-dto.stub': `import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class Create{{SingularName}}Dto {
   @IsString()
@@ -445,12 +444,12 @@ export class Create{{SingularName}}Dto {
   // Add more properties as needed
 }`,
 
-            'update-dto.stub': `import { PartialType } from '@nestjs/mapped-types';
+      'update-dto.stub': `import { PartialType } from '@nestjs/mapped-types';
 import { Create{{SingularName}}Dto } from './create-{{singularName}}.dto';
 
 export class Update{{SingularName}}Dto extends PartialType(Create{{SingularName}}Dto) {}`,
 
-            'schema.stub': `import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+      'schema.stub': `import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 export type {{SingularName}}Document = {{SingularName}} & Document;
@@ -473,21 +472,21 @@ export class {{SingularName}} {
   // Add more fields as needed
 }
 
-export const {{SingularName}}Schema = SchemaFactory.createForClass({{SingularName}});`
-        };
+export const {{SingularName}}Schema = SchemaFactory.createForClass({{SingularName}});`,
+    };
 
-        Object.entries(defaultTemplates).forEach(([filename, content]) => {
-            const filePath = path.join(templatesDir, filename);
-            if (!fs.existsSync(filePath)) {
-                fs.writeFileSync(filePath, content);
-                console.log(`Created template: ${filePath}`);
-            }
-        });
-    }
+    Object.entries(defaultTemplates).forEach(([filename, content]) => {
+      const filePath = path.join(templatesDir, filename);
+      if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, content);
+        console.log(`Created template: ${filePath}`);
+      }
+    });
+  }
 
-    // Show help
-    showHelp() {
-        console.log(`
+  // Show help
+  showHelp() {
+    console.log(`
 NestJS Module Generator
 
 Usage:
@@ -508,56 +507,56 @@ Examples:
 Configuration:
   Create a 'generator.config.js' file to customize templates, exclusions, and paths.
     `);
-    }
+  }
 }
 
 // CLI Interface
 function main() {
-    const generator = new NestJSGenerator();
-    const args = process.argv.slice(2);
-    const command = args[0];
+  const generator = new NestJSGenerator();
+  const args = process.argv.slice(2);
+  const command = args[0];
 
-    // Load configuration if exists
-    generator.loadConfig();
+  // Load configuration if exists
+  generator.loadConfig();
 
-    switch (command) {
-        case 'init':
-            generator.initTemplates();
-            break;
+  switch (command) {
+    case 'init':
+      generator.initTemplates();
+      break;
 
-        case 'generate':
-            if (args.length < 2) {
-                console.error('Error: Please provide module name(s)');
-                generator.showHelp();
-                process.exit(1);
-            }
-            generator.generateModules(args.slice(1));
-            break;
+    case 'generate':
+      if (args.length < 2) {
+        console.error('Error: Please provide module name(s)');
+        generator.showHelp();
+        process.exit(1);
+      }
+      generator.generateModules(args.slice(1));
+      break;
 
-        case 'batch':
-            // Use batchModules from config if available, otherwise use default
-            const modules = generator.config.batchModules || [
-                'users',
-                'user_preferences',
-                'articles',
-                'checklists',
-                'categories',
-                'tags',
-                'comments',
-                'questions',
-                'answers',
-                'testimonials',
-                // 'roles',
-                // 'permissions',
-            ];
-            generator.generateModules(modules);
-            break;
+    case 'batch':
+      // Use batchModules from config if available, otherwise use default
+      const modules = generator.config.batchModules || [
+        'users',
+        'user_preferences',
+        'articles',
+        'checklists',
+        'categories',
+        'tags',
+        'comments',
+        'questions',
+        'answers',
+        'testimonials',
+        // 'roles',
+        // 'permissions',
+      ];
+      generator.generateModules(modules);
+      break;
 
-        case 'help':
-        default:
-            generator.showHelp();
-            break;
-    }
+    case 'help':
+    default:
+      generator.showHelp();
+      break;
+  }
 }
 
 // Export for use as a module
@@ -565,5 +564,5 @@ module.exports = NestJSGenerator;
 
 // Run if called directly
 if (require.main === module) {
-    main();
+  main();
 }

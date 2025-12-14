@@ -25,7 +25,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nahidnfr123/nestjs-module-generate"
+    "url": "https://github.com/nahidnfr123/nestjs-module-generate.git"
   },
   "bugs": {
     "url": "https://github.com/nahidnfr123/nestjs-module-generate/issues"
